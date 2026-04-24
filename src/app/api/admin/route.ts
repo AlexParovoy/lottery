@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -9,26 +9,19 @@ type AdminAction =
   | "reset_all"
   | "delete_participant";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const adminPassword = process.env.ADMIN_PASSWORD;
-
-if (!supabaseUrl || !serviceRoleKey || !adminPassword) {
-  throw new Error("Missing admin server environment variables.");
-}
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
 function isAuthorized(request: Request) {
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminPassword) {
+    return false;
+  }
+
   return request.headers.get("x-admin-password") === adminPassword;
 }
 
 async function loadAdminData() {
+  const supabaseAdmin = getSupabaseAdminClient();
+
   const [participantsResponse, settingsResponse] = await Promise.all([
     supabaseAdmin
       .from("participants")
@@ -101,6 +94,7 @@ export async function PATCH(request: Request) {
   }
 
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const body = await request.json();
 
     const updatePayload: Record<string, unknown> = {};
@@ -153,6 +147,8 @@ export async function POST(request: Request) {
   }
 
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
+
     const body = (await request.json()) as {
       action?: AdminAction;
       participantId?: number;

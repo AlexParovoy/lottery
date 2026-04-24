@@ -1,6 +1,6 @@
 import { randomInt } from "crypto";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
 
 export const dynamic = "force-dynamic";
 
@@ -25,21 +25,9 @@ type AppSettings = {
   extra_prizes_total: number | null;
 };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("Missing Supabase server environment variables.");
-}
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
 async function loadDrawData() {
+  const supabaseAdmin = getSupabaseAdminClient();
+
   const [participantsResponse, settingsResponse] = await Promise.all([
     supabaseAdmin
       .from("participants")
@@ -57,13 +45,8 @@ async function loadDrawData() {
       .maybeSingle<AppSettings>(),
   ]);
 
-  if (participantsResponse.error) {
-    throw participantsResponse.error;
-  }
-
-  if (settingsResponse.error) {
-    throw settingsResponse.error;
-  }
+  if (participantsResponse.error) throw participantsResponse.error;
+  if (settingsResponse.error) throw settingsResponse.error;
 
   return {
     participants: (participantsResponse.data as Participant[]) ?? [],
@@ -142,6 +125,7 @@ export async function GET() {
 
 export async function POST() {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const { participants, settings } = await loadDrawData();
 
     if (!settings) {

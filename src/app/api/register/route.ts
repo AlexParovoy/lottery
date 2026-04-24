@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { getSupabaseAdminClient } from "@/lib/supabaseAdmin";
+
+export const dynamic = "force-dynamic";
 
 type RegisterBody = {
   code?: string;
@@ -27,44 +29,19 @@ type CodeRow = {
   used_by_phone: string | null;
 };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("Missing Supabase environment variables.");
-}
-
-const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false,
-  },
-});
-
 function validateInternationalPhone(value: string) {
   const trimmed = value.trim();
 
-  if (!trimmed) {
-    return "Įveskite telefono numerį";
-  }
-
+  if (!trimmed) return "Įveskite telefono numerį";
   if (!trimmed.startsWith("+")) {
     return "Naudokite tarptautinį formatą, pvz. +37061234567";
   }
 
   const phoneNumber = parsePhoneNumberFromString(trimmed);
 
-  if (!phoneNumber) {
-    return "Neteisingas telefono numerio formatas";
-  }
-
-  if (!phoneNumber.countryCallingCode) {
-    return "Neteisingas šalies kodas";
-  }
-
-  if (!phoneNumber.isValid()) {
-    return "Neteisingas telefono numeris arba šalies kodas";
-  }
+  if (!phoneNumber) return "Neteisingas telefono numerio formatas";
+  if (!phoneNumber.countryCallingCode) return "Neteisingas šalies kodas";
+  if (!phoneNumber.isValid()) return "Neteisingas telefono numeris arba šalies kodas";
 
   return null;
 }
@@ -72,23 +49,13 @@ function validateInternationalPhone(value: string) {
 function validateAge(value: string, enforce18Plus: boolean) {
   const trimmed = value.trim();
 
-  if (!trimmed) {
-    return "Įveskite amžių";
-  }
-
-  if (!/^\d+$/.test(trimmed)) {
-    return "Amžius turi būti skaičius";
-  }
+  if (!trimmed) return "Įveskite amžių";
+  if (!/^\d+$/.test(trimmed)) return "Amžius turi būti skaičius";
 
   const numericAge = Number(trimmed);
 
-  if (!Number.isInteger(numericAge)) {
-    return "Amžius turi būti sveikas skaičius";
-  }
-
-  if (numericAge < 1 || numericAge > 120) {
-    return "Įveskite realų amžių";
-  }
+  if (!Number.isInteger(numericAge)) return "Amžius turi būti sveikas skaičius";
+  if (numericAge < 1 || numericAge > 120) return "Įveskite realų amžių";
 
   if (enforce18Plus && numericAge < 18) {
     return "Dalyvauti gali tik 18+ asmenys";
@@ -99,6 +66,7 @@ function validateAge(value: string, enforce18Plus: boolean) {
 
 export async function POST(request: Request) {
   try {
+    const supabaseAdmin = getSupabaseAdminClient();
     const body = (await request.json()) as RegisterBody;
 
     const code = String(body.code ?? "").trim();
@@ -151,6 +119,7 @@ export async function POST(request: Request) {
       ageRaw,
       Boolean(settings.enforce_registration_18_plus)
     );
+
     if (ageError) {
       return NextResponse.json(
         { field: "age", message: ageError },
@@ -159,6 +128,7 @@ export async function POST(request: Request) {
     }
 
     const phoneError = validateInternationalPhone(phone);
+
     if (phoneError) {
       return NextResponse.json(
         { field: "phone", message: phoneError },
