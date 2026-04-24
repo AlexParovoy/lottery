@@ -2,27 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { parsePhoneNumberFromString } from "libphonenumber-js";
-import { supabase } from "../lib/supabase";
 
 type FormErrors = {
   code?: string;
   name?: string;
+  age?: string;
   phone?: string;
   consent?: string;
   submit?: string;
 };
 
-type CodeRow = {
-  id: number;
-  code: string;
-  used: boolean;
-  used_at: string | null;
-  used_by_phone: string | null;
-};
-
 export default function Home() {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
+  const [age, setAge] = useState("");
   const [phone, setPhone] = useState("");
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -35,25 +28,53 @@ export default function Home() {
     setErrors((prev) => ({ ...prev, [field]: undefined, submit: undefined }));
   };
 
+  const validateInternationalPhone = (value: string) => {
+    const trimmed = value.trim();
+
+    if (!trimmed) return "Įveskite telefono numerį";
+    if (!trimmed.startsWith("+")) {
+      return "Naudokite tarptautinį formatą, pvz. +37061234567";
+    }
+
+    const phoneNumber = parsePhoneNumberFromString(trimmed);
+
+    if (!phoneNumber) return "Neteisingas telefono numerio formatas";
+    if (!phoneNumber.countryCallingCode) return "Neteisingas šalies kodas";
+    if (!phoneNumber.isValid()) return "Neteisingas telefono numeris arba šalies kodas";
+
+    return null;
+  };
+
+  const validateAge = (value: string) => {
+    const trimmed = value.trim();
+
+    if (!trimmed) return "Įveskite amžių";
+    if (!/^\d+$/.test(trimmed)) return "Amžius turi būti skaičius";
+
+    const numericAge = Number(trimmed);
+
+    if (!Number.isInteger(numericAge)) return "Amžius turi būti sveikas skaičius";
+    if (numericAge < 1 || numericAge > 120) return "Įveskite realų amžių";
+
+    return null;
+  };
+
   const addDigit = (digit: string) => {
     if (code.length < 4) {
       setCode((prev) => prev + digit);
-      if (errors.code) {
-        clearFieldError("code");
-      }
+      if (errors.code) clearFieldError("code");
     }
   };
 
   const removeDigit = () => {
     setCode((prev) => prev.slice(0, -1));
-    if (errors.code) {
-      clearFieldError("code");
-    }
+    if (errors.code) clearFieldError("code");
   };
 
   const resetForm = () => {
     setCode("");
     setName("");
+    setAge("");
     setPhone("");
     setConsent(false);
     setErrors({});
@@ -61,49 +82,17 @@ export default function Home() {
     setSaving(false);
   };
 
-  const validateInternationalPhone = (value: string) => {
-    const trimmed = value.trim();
-
-    if (!trimmed) {
-      return "Įveskite telefono numerį";
-    }
-
-    if (!trimmed.startsWith("+")) {
-      return "Naudokite tarptautinį formatą, pvz. +37061234567";
-    }
-
-    const phoneNumber = parsePhoneNumberFromString(trimmed);
-
-    if (!phoneNumber) {
-      return "Neteisingas telefono numerio formatas";
-    }
-
-    if (!phoneNumber.countryCallingCode) {
-      return "Neteisingas šalies kodas";
-    }
-
-    if (!phoneNumber.isValid()) {
-      return "Neteisingas telefono numeris arba šalies kodas";
-    }
-
-    return null;
-  };
-
   const validateForm = () => {
     const newErrors: FormErrors = {};
 
-    if (code.length !== 4) {
-      newErrors.code = "Įveskite 4 skaitmenų kodą";
-    }
+    if (code.length !== 4) newErrors.code = "Įveskite 4 skaitmenų kodą";
+    if (!name.trim()) newErrors.name = "Įveskite vardą";
 
-    if (!name.trim()) {
-      newErrors.name = "Įveskite vardą";
-    }
+    const ageError = validateAge(age);
+    if (ageError) newErrors.age = ageError;
 
     const phoneError = validateInternationalPhone(phone);
-    if (phoneError) {
-      newErrors.phone = phoneError;
-    }
+    if (phoneError) newErrors.phone = phoneError;
 
     if (!consent) {
       newErrors.consent =
@@ -120,97 +109,26 @@ export default function Home() {
     setSaving(true);
     setErrors({});
 
-    const cleanPhone = phone.trim();
-    const cleanName = name.trim();
-    const cleanCode = code.trim();
-
-    const { data: codeRow, error: codeError } = await supabase
-      .from("codes")
-      .select("*")
-      .eq("code", cleanCode)
-      .maybeSingle<CodeRow>();
-
-    if (codeError) {
-      console.error(codeError);
-      setErrors({
-        submit: "Nepavyko patikrinti kodo. Bandykite dar kartą.",
-      });
-      setSaving(false);
-      return;
-    }
-
-    if (!codeRow) {
-      setErrors({
-        code: "Šis kodas neegzistuoja",
-      });
-      setSaving(false);
-      return;
-    }
-
-    if (codeRow.used) {
-      setErrors({
-        code: "Šis kodas jau panaudotas",
-      });
-      setSaving(false);
-      return;
-    }
-
-    const { data: existingParticipant, error: participantCheckError } =
-      await supabase
-        .from("participants")
-        .select("id")
-        .eq("phone", cleanPhone)
-        .maybeSingle();
-
-    if (participantCheckError) {
-      console.error(participantCheckError);
-      setErrors({
-        submit: "Nepavyko patikrinti dalyvio. Bandykite dar kartą.",
-      });
-      setSaving(false);
-      return;
-    }
-
-    if (existingParticipant) {
-      setErrors({
-        phone: "Šis telefono numeris jau dalyvauja",
-      });
-      setSaving(false);
-      return;
-    }
-
-    const { error: insertError } = await supabase.from("participants").insert([
-      {
-        code: cleanCode,
-        name: cleanName,
-        phone: cleanPhone,
-        consent: true,
+    const response = await fetch("/api/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    ]);
+      body: JSON.stringify({
+        code: code.trim(),
+        name: name.trim(),
+        age: age.trim(),
+        phone: phone.trim(),
+        consent,
+      }),
+    });
 
-    if (insertError) {
-      console.error(insertError);
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
       setErrors({
-        submit: "Nepavyko išsaugoti dalyvio. Bandykite dar kartą.",
-      });
-      setSaving(false);
-      return;
-    }
-
-    const { error: updateCodeError } = await supabase
-      .from("codes")
-      .update({
-        used: true,
-        used_at: new Date().toISOString(),
-        used_by_phone: cleanPhone,
-      })
-      .eq("id", codeRow.id);
-
-    if (updateCodeError) {
-      console.error(updateCodeError);
-      setErrors({
-        submit:
-          "Dalyvis išsaugotas, bet kodo būsena neatnaujinta. Patikrinkite administravimo pusėje.",
+        [result?.field ?? "submit"]:
+          result?.message ?? "Nepavyko išsaugoti dalyvio. Bandykite dar kartą.",
       });
       setSaving(false);
       return;
@@ -358,9 +276,7 @@ export default function Home() {
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (errors.name) {
-                      clearFieldError("name");
-                    }
+                    if (errors.name) clearFieldError("name");
                   }}
                   className={`w-full rounded-[1.25rem] border bg-white/[0.03] px-4 py-3.5 text-base text-white outline-none transition placeholder:text-white/25 sm:px-5 sm:py-3.5 sm:text-lg md:rounded-[1.5rem] md:py-4.5 ${
                     errors.name
@@ -377,6 +293,33 @@ export default function Home() {
 
               <div>
                 <label className="mb-2 block text-[11px] uppercase tracking-[0.3em] text-white/40 sm:text-xs">
+                  Age
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Įveskite amžių"
+                  value={age}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 3);
+                    setAge(digitsOnly);
+                    if (errors.age) clearFieldError("age");
+                  }}
+                  className={`w-full rounded-[1.25rem] border bg-white/[0.03] px-4 py-3.5 text-base text-white outline-none transition placeholder:text-white/25 sm:px-5 sm:py-3.5 sm:text-lg md:rounded-[1.5rem] md:py-4.5 ${
+                    errors.age
+                      ? "border-red-400/70 bg-red-500/10"
+                      : "border-white/10 focus:border-[#ff4fa3]/55 focus:shadow-[0_0_25px_rgba(255,47,146,0.18)]"
+                  }`}
+                />
+                {errors.age && (
+                  <p className="mt-2 text-sm font-medium text-red-300">
+                    {errors.age}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-[11px] uppercase tracking-[0.3em] text-white/40 sm:text-xs">
                   Phone
                 </label>
                 <input
@@ -385,9 +328,7 @@ export default function Home() {
                   value={phone}
                   onChange={(e) => {
                     setPhone(e.target.value);
-                    if (errors.phone) {
-                      clearFieldError("phone");
-                    }
+                    if (errors.phone) clearFieldError("phone");
                   }}
                   className={`w-full rounded-[1.25rem] border bg-white/[0.03] px-4 py-3.5 text-base text-white outline-none transition placeholder:text-white/25 sm:px-5 sm:py-3.5 sm:text-lg md:rounded-[1.5rem] md:py-4.5 ${
                     errors.phone
@@ -418,9 +359,7 @@ export default function Home() {
                     checked={consent}
                     onChange={(e) => {
                       setConsent(e.target.checked);
-                      if (errors.consent) {
-                        clearFieldError("consent");
-                      }
+                      if (errors.consent) clearFieldError("consent");
                     }}
                     className="mt-1 h-5 w-5 accent-[#ff2f92]"
                   />
