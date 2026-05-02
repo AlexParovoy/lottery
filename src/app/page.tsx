@@ -50,6 +50,7 @@ const keypadButtons = [
 
 export default function Home() {
   const [mode, setMode] = useState<ScreenMode>("standby");
+  const [registrationReady, setRegistrationReady] = useState(false);
   const wakeLockUntilRef = useRef(0);
 
   const [code, setCode] = useState("");
@@ -59,6 +60,15 @@ export default function Home() {
   const [consent, setConsent] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const registrationImage = new Image();
+    registrationImage.onload = () => setRegistrationReady(true);
+    registrationImage.src = REGISTRATION_BG;
+
+    const successImage = new Image();
+    successImage.src = SUCCESS_BG;
+  }, []);
 
   const clearFieldError = (field: keyof FormErrors) => {
     setErrors((prev) => ({ ...prev, [field]: undefined, submit: undefined }));
@@ -85,7 +95,7 @@ export default function Home() {
     if (!trimmed) return "Įveskite telefono numerį";
 
     if (!trimmed.startsWith("+")) {
-      return "Naudokite tarptautinį formatą, pvz. +37061234567";
+      return "Naudokite tarptautinį formatą, pvz. +37012345678";
     }
 
     const phoneNumber = parsePhoneNumberFromString(trimmed);
@@ -221,7 +231,10 @@ export default function Home() {
         onPointerDown={(event) => {
           event.preventDefault();
           wakeLockUntilRef.current = Date.now() + 600;
-          setMode("form");
+
+          if (registrationReady) {
+            setMode("form");
+          }
         }}
       >
         <div className="relative h-[min(100vh,177.777vw)] w-[min(100vw,56.25vh)] overflow-hidden bg-black">
@@ -262,35 +275,35 @@ export default function Home() {
         />
 
         {codeBoxes.map((item, index) => (
-  <div
-    key={index}
-    className="absolute"
-    style={box(item.x, item.y, item.width, item.height)}
-  >
-    <svg
-      viewBox="0 0 100 100"
-      className="h-full w-full overflow-visible"
-      aria-hidden="true"
-    >
-      <text
-        x="50"
-        y="50"
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="white"
-        fontSize="54"
-        fontWeight="500"
-        fontFamily="Arial, Helvetica, sans-serif"
-        style={{
-          filter: "drop-shadow(0px 3px 8px rgba(0,0,0,0.25))",
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {code[index] ?? ""}
-      </text>
-    </svg>
-  </div>
-))}
+          <div
+            key={index}
+            className="absolute"
+            style={box(item.x, item.y, item.width, item.height)}
+          >
+            <svg
+              viewBox="0 0 100 100"
+              className="h-full w-full overflow-visible"
+              aria-hidden="true"
+            >
+              <text
+                x="50"
+                y="50"
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="white"
+                fontSize="54"
+                fontWeight="500"
+                fontFamily="Arial, Helvetica, sans-serif"
+                style={{
+                  filter: "drop-shadow(0px 3px 8px rgba(0,0,0,0.25))",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {code[index] ?? ""}
+              </text>
+            </svg>
+          </div>
+        ))}
 
         {keypadButtons.map(({ digit, x, y }) => (
           <button
