@@ -334,7 +334,7 @@ export default function Home() {
         <input
           aria-label="Phone"
           type="tel"
-          placeholder="+37061234567"
+          placeholder="+37012345678"
           value={phone}
           onChange={(e) => {
             setPhone(e.target.value);
