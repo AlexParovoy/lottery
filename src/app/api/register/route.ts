@@ -7,18 +7,9 @@ export const dynamic = "force-dynamic";
 type RegisterBody = {
   code?: string;
   name?: string;
-  age?: string | number;
   phone?: string;
+  email?: string;
   consent?: boolean;
-};
-
-type AppSettings = {
-  id: number;
-  main_draw_min_age: number;
-  main_draw_max_age: number;
-  enforce_registration_18_plus: boolean;
-  allow_same_person_win_multiple_prizes: boolean;
-  extra_prizes_total: number;
 };
 
 type CodeRow = {
@@ -27,12 +18,15 @@ type CodeRow = {
   used: boolean;
   used_at: string | null;
   used_by_phone: string | null;
+  bracelet_color: string | null;
+  eligible_for_draw: boolean | null;
 };
 
 function validateInternationalPhone(value: string) {
   const trimmed = value.trim();
 
   if (!trimmed) return "Įveskite telefono numerį";
+
   if (!trimmed.startsWith("+")) {
     return "Naudokite tarptautinį formatą, pvz. +37061234567";
   }
@@ -41,27 +35,68 @@ function validateInternationalPhone(value: string) {
 
   if (!phoneNumber) return "Neteisingas telefono numerio formatas";
   if (!phoneNumber.countryCallingCode) return "Neteisingas šalies kodas";
-  if (!phoneNumber.isValid()) return "Neteisingas telefono numeris arba šalies kodas";
+  if (!phoneNumber.isValid()) {
+    return "Neteisingas telefono numeris arba šalies kodas";
+  }
 
   return null;
 }
 
-function validateAge(value: string, enforce18Plus: boolean) {
+function validateEmail(value: string) {
   const trimmed = value.trim();
 
-  if (!trimmed) return "Įveskite amžių";
-  if (!/^\d+$/.test(trimmed)) return "Amžius turi būti skaičius";
+  if (!trimmed) return "Įveskite el. paštą";
 
-  const numericAge = Number(trimmed);
+  const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!Number.isInteger(numericAge)) return "Amžius turi būti sveikas skaičius";
-  if (numericAge < 1 || numericAge > 120) return "Įveskite realų amžių";
-
-  if (enforce18Plus && numericAge < 18) {
-    return "Dalyvauti gali tik 18+ asmenys";
+  if (!emailPattern.test(trimmed)) {
+    return "Neteisingas el. pašto formatas";
   }
 
   return null;
+}
+
+function getInsertErrorMessage(error: unknown) {
+  const typedError = error as {
+    code?: string;
+    message?: string;
+    details?: string;
+  };
+
+  if (typedError.code === "23505") {
+    const combined = `${typedError.message ?? ""} ${typedError.details ?? ""}`;
+
+    if (combined.includes("participants_phone_unique")) {
+      return {
+        field: "phone",
+        message: "Šis telefono numeris jau dalyvauja",
+      };
+    }
+
+    if (combined.includes("participants_code_unique")) {
+      return {
+        field: "code",
+        message: "Šis kodas jau panaudotas",
+      };
+    }
+
+    if (combined.includes("participants_email_unique")) {
+      return {
+        field: "email",
+        message: "Šis el. paštas jau dalyvauja",
+      };
+    }
+
+    return {
+      field: "submit",
+      message: "Šie duomenys jau buvo panaudoti registracijai.",
+    };
+  }
+
+  return {
+    field: "submit",
+    message: "Nepavyko išsaugoti dalyvio.",
+  };
 }
 
 export async function POST(request: Request) {
@@ -71,8 +106,8 @@ export async function POST(request: Request) {
 
     const code = String(body.code ?? "").trim();
     const name = String(body.name ?? "").trim();
-    const ageRaw = String(body.age ?? "").trim();
     const phone = String(body.phone ?? "").trim();
+    const email = String(body.email ?? "").trim().toLowerCase();
     const consent = Boolean(body.consent);
 
     if (code.length !== 4) {
@@ -89,6 +124,24 @@ export async function POST(request: Request) {
       );
     }
 
+    const phoneError = validateInternationalPhone(phone);
+
+    if (phoneError) {
+      return NextResponse.json(
+        { field: "phone", message: phoneError },
+        { status: 400 }
+      );
+    }
+
+    const emailError = validateEmail(email);
+
+    if (emailError) {
+      return NextResponse.json(
+        { field: "email", message: emailError },
+        { status: 400 }
+      );
+    }
+
     if (!consent) {
       return NextResponse.json(
         {
@@ -99,48 +152,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: settings, error: settingsError } = await supabaseAdmin
-      .from("app_settings")
-      .select(
-        "id, main_draw_min_age, main_draw_max_age, enforce_registration_18_plus, allow_same_person_win_multiple_prizes, extra_prizes_total"
-      )
-      .eq("id", 1)
-      .maybeSingle<AppSettings>();
-
-    if (settingsError || !settings) {
-      console.error("Failed to load settings:", settingsError);
-      return NextResponse.json(
-        { field: "submit", message: "Nepavyko užkrauti nustatymų." },
-        { status: 500 }
-      );
-    }
-
-    const ageError = validateAge(
-      ageRaw,
-      Boolean(settings.enforce_registration_18_plus)
-    );
-
-    if (ageError) {
-      return NextResponse.json(
-        { field: "age", message: ageError },
-        { status: 400 }
-      );
-    }
-
-    const phoneError = validateInternationalPhone(phone);
-
-    if (phoneError) {
-      return NextResponse.json(
-        { field: "phone", message: phoneError },
-        { status: 400 }
-      );
-    }
-
-    const numericAge = Number(ageRaw);
-
     const { data: codeRow, error: codeError } = await supabaseAdmin
       .from("codes")
-      .select("*")
+      .select(
+        "id, code, used, used_at, used_by_phone, bracelet_color, eligible_for_draw"
+      )
       .eq("code", code)
       .maybeSingle<CodeRow>();
 
@@ -170,7 +186,7 @@ export async function POST(request: Request) {
       await supabaseAdmin
         .from("participants")
         .select("id")
-        .eq("phone", phone)
+        .or(`phone.eq.${phone},email.eq.${email}`)
         .maybeSingle();
 
     if (participantCheckError) {
@@ -183,27 +199,37 @@ export async function POST(request: Request) {
 
     if (existingParticipant) {
       return NextResponse.json(
-        { field: "phone", message: "Šis telefono numeris jau dalyvauja" },
+        {
+          field: "submit",
+          message: "Šis telefono numeris arba el. paštas jau dalyvauja",
+        },
         { status: 400 }
       );
     }
 
-    const { error: insertError } = await supabaseAdmin.from("participants").insert([
-      {
-        code,
-        name,
-        age: numericAge,
-        phone,
-        consent: true,
-      },
-    ]);
+    const braceletColor = codeRow.bracelet_color ?? "green";
+    const eligibleForDraw = Boolean(codeRow.eligible_for_draw);
+
+    const { error: insertError } = await supabaseAdmin
+      .from("participants")
+      .insert([
+        {
+          code,
+          name,
+          phone,
+          email,
+          consent: true,
+          bracelet_color: braceletColor,
+          eligible_for_draw: eligibleForDraw,
+          selected_for_main_prize: false,
+        },
+      ]);
 
     if (insertError) {
       console.error("Insert participant failed:", insertError);
-      return NextResponse.json(
-        { field: "submit", message: "Nepavyko išsaugoti dalyvio." },
-        { status: 500 }
-      );
+      const errorMessage = getInsertErrorMessage(insertError);
+
+      return NextResponse.json(errorMessage, { status: 400 });
     }
 
     const { error: updateCodeError } = await supabaseAdmin

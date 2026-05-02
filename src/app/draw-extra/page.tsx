@@ -1,51 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
-
-type Participant = {
-  id: number;
-  code: string;
-  name: string;
-  age: number | null;
-  created_at: string;
-  won_main_prize?: boolean | null;
-  main_prize_won_at?: string | null;
-  won_extra_prize?: boolean | null;
-  extra_prize_won_at?: string | null;
-};
-
-type AppSettings = {
-  id: number;
-  main_draw_min_age?: number | null;
-  main_draw_max_age?: number | null;
-  enforce_registration_18_plus?: boolean | null;
-  allow_same_person_win_multiple_prizes: boolean | null;
-  extra_prizes_total: number | null;
-};
 
 type DrawState = "idle" | "loading" | "spinning" | "revealed";
 
+const DESIGN_WIDTH = 1728;
+const DESIGN_HEIGHT = 972;
+
+const DRAW_EXTRA_BG = "/draw-extra_bg.jpg";
+
+const box = (x: number, y: number, width: number, height: number) => ({
+  left: `${(x / DESIGN_WIDTH) * 100}%`,
+  top: `${(y / DESIGN_HEIGHT) * 100}%`,
+  width: `${(width / DESIGN_WIDTH) * 100}%`,
+  height: `${(height / DESIGN_HEIGHT) * 100}%`,
+});
+
+const DIGIT_BOXES = [
+  { x: 437, y: 363, width: 190, height: 150 },
+  { x: 660, y: 363, width: 190, height: 150 },
+  { x: 880, y: 363, width: 190, height: 150 },
+  { x: 1102, y: 363, width: 190, height: 150 },
+];
+
+const STOP_SEQUENCE = [
+  { digitIndex: 0, delay: 1500 },
+  { digitIndex: 1, delay: 2500 },
+  { digitIndex: 2, delay: 3500 },
+  { digitIndex: 3, delay: 4500 },
+];
+
 export default function DrawExtraPage() {
-  const [participants, setParticipants] = useState<Participant[]>([]);
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [loading, setLoading] = useState(true);
   const [drawState, setDrawState] = useState<DrawState>("idle");
-  const [winner, setWinner] = useState<Participant | null>(null);
   const [digits, setDigits] = useState(["0", "0", "0", "0"]);
-  const [showName, setShowName] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const intervalsRef = useRef<number[]>([]);
   const timeoutsRef = useRef<number[]>([]);
-
-  useEffect(() => {
-    void loadData();
-
-    return () => {
-      clearTimers();
-    };
-  }, []);
+  const isRunningRef = useRef(false);
 
   const clearTimers = () => {
     intervalsRef.current.forEach((id) => clearInterval(id));
@@ -54,134 +47,9 @@ export default function DrawExtraPage() {
     timeoutsRef.current = [];
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    setErrorMessage("");
-
-    const response = await fetch("/api/draw-extra", {
-      method: "GET",
-      cache: "no-store",
-    });
-
-    const result = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setErrorMessage(result?.message ?? "Failed to load extra draw data.");
-      setParticipants([]);
-      setSettings(null);
-      setLoading(false);
-      return;
-    }
-
-    setParticipants((result?.participants ?? []) as Participant[]);
-    setSettings((result?.settings ?? null) as AppSettings | null);
-    setLoading(false);
-  };
-
-  const launchConfetti = () => {
-    const end = Date.now() + 2000;
-
-    const frame = () => {
-      confetti({
-        particleCount: 4,
-        spread: 60,
-        origin: { x: Math.random(), y: Math.random() * 0.5 },
-        colors: ["#ff2f92", "#ff77bb", "#ffffff"],
-      });
-
-      if (Date.now() < end) {
-        requestAnimationFrame(frame);
-      }
-    };
-
-    frame();
-  };
-
-  const extraWinnersCount = useMemo(() => {
-    return participants.filter(
-      (participant) => participant.won_extra_prize || participant.extra_prize_won_at
-    ).length;
-  }, [participants]);
-
-  const availableParticipants = useMemo(() => {
-    if (!settings) return [];
-
-    const allowSamePersonWinMultiplePrizes =
-      settings.allow_same_person_win_multiple_prizes ?? false;
-
-    return participants.filter((participant) => {
-      if (participant.won_extra_prize || participant.extra_prize_won_at) {
-        return false;
-      }
-
-      if (allowSamePersonWinMultiplePrizes) {
-        return true;
-      }
-
-      return !(
-        participant.won_main_prize ||
-        participant.main_prize_won_at ||
-        participant.won_extra_prize ||
-        participant.extra_prize_won_at
-      );
-    });
-  }, [participants, settings]);
-
-  const prizesRemaining = useMemo(() => {
-    const total = settings?.extra_prizes_total ?? 0;
-    return Math.max(total - extraWinnersCount, 0);
-  }, [settings, extraWinnersCount]);
-
-  const canStartDraw =
-    !loading &&
-    !!settings &&
-    drawState !== "loading" &&
-    drawState !== "spinning" &&
-    prizesRemaining > 0 &&
-    availableParticipants.length > 0;
-
-  const startDraw = async () => {
-    if (!canStartDraw) return;
-
+  const startSpinningDigits = () => {
     clearTimers();
-    setShowName(false);
-    setWinner(null);
-    setDigits(["0", "0", "0", "0"]);
-    setErrorMessage("");
-    setDrawState("loading");
 
-    const response = await fetch("/api/draw-extra", {
-      method: "POST",
-      cache: "no-store",
-    });
-
-    const result = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      setErrorMessage(result?.message ?? "Failed to run extra draw.");
-      setDrawState("idle");
-      await loadData();
-      return;
-    }
-
-    const selected = result?.winner as Participant | null;
-
-    if (!selected) {
-      setErrorMessage("Winner was not returned.");
-      setDrawState("idle");
-      return;
-    }
-
-    setWinner(selected);
-    setParticipants((prev) =>
-      prev.map((participant) =>
-        participant.id === selected.id ? selected : participant
-      )
-    );
-
-    setDrawState("spinning");
-
-    const codeDigits = selected.code.padStart(4, "0").slice(0, 4).split("");
     const localIntervals: number[] = [];
 
     for (let i = 0; i < 4; i++) {
@@ -191,36 +59,118 @@ export default function DrawExtraPage() {
           next[i] = String(Math.floor(Math.random() * 10));
           return next;
         });
-      }, 80);
+      }, 70);
 
       localIntervals.push(intervalId);
     }
 
     intervalsRef.current = localIntervals;
+    return localIntervals;
+  };
 
-    [1500, 2500, 3500, 4500].forEach((time, i) => {
+  const stopDigitsToCode = (winnerCode: string, localIntervals: number[]) => {
+    const finalDigits = winnerCode.padStart(4, "0").slice(0, 4).split("");
+
+    STOP_SEQUENCE.forEach(({ digitIndex, delay }, stepIndex) => {
       const timeoutId = window.setTimeout(() => {
-        clearInterval(localIntervals[i]);
+        clearInterval(localIntervals[digitIndex]);
 
         setDigits((prev) => {
           const next = [...prev];
-          next[i] = codeDigits[i];
+          next[digitIndex] = finalDigits[digitIndex];
           return next;
         });
 
-        if (i === 3) {
+        if (stepIndex === STOP_SEQUENCE.length - 1) {
           const revealTimeout = window.setTimeout(() => {
             setDrawState("revealed");
-            setShowName(true);
+            isRunningRef.current = false;
             launchConfetti();
-          }, 800);
+          }, 700);
 
           timeoutsRef.current.push(revealTimeout);
         }
-      }, time);
+      }, delay);
 
       timeoutsRef.current.push(timeoutId);
     });
+  };
+
+  const launchConfetti = () => {
+    confetti({
+      particleCount: 180,
+      spread: 90,
+      startVelocity: 45,
+      origin: { x: 0.5, y: 0.55 },
+      colors: ["#49f2aa", "#41b7ff", "#ff4fc3", "#ffffff"],
+    });
+
+    const end = Date.now() + 2200;
+
+    const frame = () => {
+      confetti({
+        particleCount: 5,
+        spread: 70,
+        startVelocity: 35,
+        origin: { x: Math.random(), y: Math.random() * 0.55 },
+        colors: ["#49f2aa", "#41b7ff", "#ff4fc3", "#ffffff"],
+      });
+
+      if (Date.now() < end) requestAnimationFrame(frame);
+    };
+
+    frame();
+  };
+
+  const startDraw = async () => {
+    if (isRunningRef.current) return;
+
+    isRunningRef.current = true;
+    setErrorMessage("");
+    setDigits(["0", "0", "0", "0"]);
+    setDrawState("spinning");
+
+    const localIntervals = startSpinningDigits();
+
+    try {
+      const response = await fetch("/api/draw-extra", {
+        method: "POST",
+        cache: "no-store",
+      });
+
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        clearTimers();
+        setErrorMessage(result?.message ?? "Failed to run extra draw.");
+        setDrawState("idle");
+        setDigits(["0", "0", "0", "0"]);
+        isRunningRef.current = false;
+        return;
+      }
+
+      const winnerCode = String(result?.winnerCode ?? "")
+        .padStart(4, "0")
+        .slice(0, 4);
+
+      if (winnerCode.length !== 4) {
+        clearTimers();
+        setErrorMessage("Winner code was not returned.");
+        setDrawState("idle");
+        setDigits(["0", "0", "0", "0"]);
+        isRunningRef.current = false;
+        return;
+      }
+
+      stopDigitsToCode(winnerCode, localIntervals);
+    } catch (error) {
+      console.error(error);
+      clearTimers();
+      setErrorMessage("Failed to run extra draw.");
+      setDrawState("idle");
+      setDigits(["0", "0", "0", "0"]);
+      isRunningRef.current = false;
+    }
   };
 
   useEffect(() => {
@@ -229,9 +179,6 @@ export default function DrawExtraPage() {
 
       if (event.key === "PageUp" || event.key === "PageDown") {
         event.preventDefault();
-
-        if (!canStartDraw) return;
-
         void startDraw();
       }
     };
@@ -240,100 +187,60 @@ export default function DrawExtraPage() {
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      clearTimers();
     };
-  }, [canStartDraw]);
+  }, []);
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-between bg-black px-6 py-16 text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(255,47,146,0.16),_rgba(0,0,0,0)_34%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,79,163,0.10),_rgba(0,0,0,0)_30%)]" />
+    <main className="flex min-h-screen items-center justify-center overflow-hidden bg-black">
+      <div
+        className="relative h-[min(100vh,56.25vw)] w-[min(100vw,177.777vh)] cursor-pointer overflow-hidden bg-black"
+        onPointerDown={() => void startDraw()}
+      >
+        <img
+          src={DRAW_EXTRA_BG}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          draggable={false}
+        />
 
-      <div className="relative z-10 text-center">
-        <p className="text-xs uppercase tracking-[0.5em] text-white/40">
-          Extra Prize Reveal
-        </p>
-
-        <p className="mt-6 text-sm uppercase tracking-[0.2em] text-[#ff77bb]">
-          All participants: {loading ? "..." : participants.length}
-        </p>
-
-        {!loading && settings && (
-          <>
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/30">
-              Available to win: {availableParticipants.length}
-            </p>
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/30">
-              Extra prizes drawn: {extraWinnersCount} /{" "}
-              {settings.extra_prizes_total ?? 0}
-            </p>
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/30">
-              Remaining: {prizesRemaining}
-            </p>
-            <p className="mt-2 text-xs uppercase tracking-[0.2em] text-[#ff9bcd]/70">
-              Start: button / PageUp / PageDown
-            </p>
-          </>
-        )}
-
-        {prizesRemaining <= 0 && !loading && (
-          <p className="mt-4 text-sm font-medium text-[#ffb3d7]">
-            All extra prizes already drawn.
-          </p>
-        )}
-
-        {errorMessage && (
-          <p className="mt-4 text-sm font-medium text-red-300">
-            {errorMessage}
-          </p>
-        )}
-      </div>
-
-      <div className="relative z-10 grid grid-cols-4 gap-4 md:gap-6">
-        {digits.map((digit, i) => (
+        {DIGIT_BOXES.map((item, index) => (
           <div
-            key={i}
-            className="flex h-28 w-20 items-center justify-center rounded-2xl border border-[#ff4fa3]/50 bg-black shadow-[0_0_25px_rgba(255,47,146,0.3)] md:h-40 md:w-28"
+            key={index}
+            className="pointer-events-none absolute z-10"
+            style={box(item.x, item.y, item.width, item.height)}
           >
-            <span className="text-6xl font-extrabold text-[#ff77bb] [text-shadow:0_0_25px_rgba(255,47,146,0.8)] md:text-8xl">
-              {digit}
-            </span>
+            <svg
+              viewBox="0 0 100 100"
+              className="h-full w-full overflow-visible"
+              aria-hidden="true"
+            >
+              <text
+                x="50"
+                y="50"
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill="white"
+                fontSize="54"
+                fontWeight="500"
+                fontFamily="Arial, Helvetica, sans-serif"
+                style={{
+                  filter: "drop-shadow(0px 3px 8px rgba(0,0,0,0.25))",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
+                {digits[index]}
+              </text>
+            </svg>
           </div>
         ))}
-      </div>
 
-      <div className="relative z-10 text-center">
-        <button
-          onClick={() => void startDraw()}
-          disabled={!canStartDraw}
-          className="rounded-full bg-gradient-to-r from-[#ff2f92] to-[#ff77bb] px-14 py-5 text-xl font-bold uppercase tracking-[0.3em] shadow-[0_0_40px_rgba(255,47,146,0.6)] transition hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {drawState === "spinning" || drawState === "loading" ? "DRAWING" : "START"}
-        </button>
-
-        {showName && winner && (
-          <div className="mt-10 animate-[fadeInUp_0.8s_ease-out]">
-            <p className="text-xs uppercase tracking-[0.5em] text-[#ff9bcd]/60">
-              Winner
-            </p>
-            <p className="mt-4 text-4xl font-extrabold md:text-6xl">
-              {winner.name}
-            </p>
+        {errorMessage && (
+          <div className="pointer-events-none absolute bottom-8 left-1/2 z-30 max-w-[80%] -translate-x-1/2 rounded-3xl bg-red-500/85 px-8 py-5 text-center text-2xl font-bold text-white shadow-[0_12px_30px_rgba(0,0,0,0.25)]">
+            {errorMessage}
           </div>
         )}
       </div>
-
-      <style jsx global>{`
-        @keyframes fadeInUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </main>
   );
 }

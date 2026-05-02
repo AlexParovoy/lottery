@@ -7,15 +7,14 @@ type AdminAction =
   | "reset_main"
   | "reset_extra"
   | "reset_all"
-  | "delete_participant";
+  | "delete_participant"
+  | "set_main_winner"
+  | "clear_main_winner"
+  | "set_bracelet";
 
 function isAuthorized(request: Request) {
   const adminPassword = process.env.ADMIN_PASSWORD;
-
-  if (!adminPassword) {
-    return false;
-  }
-
+  if (!adminPassword) return false;
   return request.headers.get("x-admin-password") === adminPassword;
 }
 
@@ -34,6 +33,9 @@ async function loadAdminData() {
           age,
           consent,
           created_at,
+          bracelet_color,
+          eligible_for_draw,
+          selected_for_main_prize,
           is_winner,
           prize_place,
           prize_type,
@@ -99,24 +101,10 @@ export async function PATCH(request: Request) {
 
     const updatePayload: Record<string, unknown> = {};
 
-    if ("enforce_registration_18_plus" in body) {
-      updatePayload.enforce_registration_18_plus = Boolean(
-        body.enforce_registration_18_plus
-      );
-    }
-
     if ("allow_same_person_win_multiple_prizes" in body) {
       updatePayload.allow_same_person_win_multiple_prizes = Boolean(
         body.allow_same_person_win_multiple_prizes
       );
-    }
-
-    if ("main_draw_min_age" in body) {
-      updatePayload.main_draw_min_age = Number(body.main_draw_min_age);
-    }
-
-    if ("main_draw_max_age" in body) {
-      updatePayload.main_draw_max_age = Number(body.main_draw_max_age);
     }
 
     if ("extra_prizes_total" in body) {
@@ -153,6 +141,7 @@ export async function POST(request: Request) {
       action?: AdminAction;
       participantId?: number;
       code?: string;
+      braceletColor?: "green" | "blue";
     };
 
     if (body.action === "reset_main") {
@@ -191,10 +180,74 @@ export async function POST(request: Request) {
           main_prize_won_at: null,
           won_extra_prize: false,
           extra_prize_won_at: null,
+          selected_for_main_prize: false,
         })
         .neq("id", 0);
 
       if (error) throw error;
+    }
+
+    if (body.action === "set_main_winner") {
+      if (!body.participantId) {
+        return NextResponse.json(
+          { message: "Missing participantId." },
+          { status: 400 }
+        );
+      }
+
+      const { error: resetError } = await supabaseAdmin
+        .from("participants")
+        .update({ selected_for_main_prize: false })
+        .neq("id", 0);
+
+      if (resetError) throw resetError;
+
+      const { error: setError } = await supabaseAdmin
+        .from("participants")
+        .update({ selected_for_main_prize: true })
+        .eq("id", body.participantId);
+
+      if (setError) throw setError;
+    }
+
+    if (body.action === "clear_main_winner") {
+      const { error } = await supabaseAdmin
+        .from("participants")
+        .update({ selected_for_main_prize: false })
+        .neq("id", 0);
+
+      if (error) throw error;
+    }
+
+    if (body.action === "set_bracelet") {
+      if (!body.participantId || !body.code || !body.braceletColor) {
+        return NextResponse.json(
+          { message: "Missing participantId, code or braceletColor." },
+          { status: 400 }
+        );
+      }
+
+      const eligibleForDraw = body.braceletColor === "green";
+
+      const { error: participantError } = await supabaseAdmin
+        .from("participants")
+        .update({
+          bracelet_color: body.braceletColor,
+          eligible_for_draw: eligibleForDraw,
+        })
+        .eq("id", body.participantId);
+
+      if (participantError) throw participantError;
+
+      const { error: codeError } = await supabaseAdmin
+        .from("codes")
+        .update({
+          bracelet_color: body.braceletColor,
+          eligible_for_draw: eligibleForDraw,
+        })
+        .eq("code", body.code);
+
+      if (codeError) throw codeError;
     }
 
     if (body.action === "delete_participant") {

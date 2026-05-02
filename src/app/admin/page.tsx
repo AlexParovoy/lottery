@@ -7,9 +7,13 @@ type Participant = {
   code: string;
   name: string;
   phone: string;
-  age: number | null;
+  age?: number | null;
   consent: boolean;
   created_at: string;
+
+  bracelet_color?: string | null;
+  eligible_for_draw?: boolean | null;
+  selected_for_main_prize?: boolean | null;
 
   is_winner?: boolean | null;
   prize_place?: number | null;
@@ -24,9 +28,9 @@ type Participant = {
 
 type AppSettings = {
   id: number;
-  main_draw_min_age: number | null;
-  main_draw_max_age: number | null;
-  enforce_registration_18_plus: boolean | null;
+  main_draw_min_age?: number | null;
+  main_draw_max_age?: number | null;
+  enforce_registration_18_plus?: boolean | null;
   allow_same_person_win_multiple_prizes: boolean | null;
   extra_prizes_total: number | null;
 };
@@ -47,8 +51,6 @@ export default function AdminPage() {
   const [actionMessage, setActionMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [minAgeInput, setMinAgeInput] = useState("");
-  const [maxAgeInput, setMaxAgeInput] = useState("");
   const [extraPrizesInput, setExtraPrizesInput] = useState("");
 
   const applyData = (data: {
@@ -59,16 +61,6 @@ export default function AdminPage() {
     setSettings(data.settings ?? null);
 
     if (data.settings) {
-      setMinAgeInput(
-        data.settings.main_draw_min_age !== null
-          ? String(data.settings.main_draw_min_age)
-          : ""
-      );
-      setMaxAgeInput(
-        data.settings.main_draw_max_age !== null
-          ? String(data.settings.main_draw_max_age)
-          : ""
-      );
       setExtraPrizesInput(
         data.settings.extra_prizes_total !== null
           ? String(data.settings.extra_prizes_total)
@@ -232,20 +224,6 @@ export default function AdminPage() {
     setBusy(false);
   };
 
-  const handleToggle18Plus = async () => {
-    if (!settings) return;
-
-    await updateSettings(
-      {
-        enforce_registration_18_plus:
-          !settings.enforce_registration_18_plus,
-      },
-      !settings.enforce_registration_18_plus
-        ? "18+ režimas įjungtas."
-        : "18+ režimas išjungtas."
-    );
-  };
-
   const handleToggleMultiPrize = async () => {
     if (!settings) return;
 
@@ -257,29 +235,6 @@ export default function AdminPage() {
       !settings.allow_same_person_win_multiple_prizes
         ? "Multiple prizes režimas įjungtas."
         : "Multiple prizes režimas išjungtas."
-    );
-  };
-
-  const handleSaveAgeRange = async () => {
-    const min = Number(minAgeInput);
-    const max = Number(maxAgeInput);
-
-    if (!Number.isInteger(min) || !Number.isInteger(max)) {
-      setActionMessage("Amžiaus ribos turi būti sveiki skaičiai.");
-      return;
-    }
-
-    if (min < 0 || max < 0 || min > max) {
-      setActionMessage("Patikrinkite amžiaus ribas.");
-      return;
-    }
-
-    await updateSettings(
-      {
-        main_draw_min_age: min,
-        main_draw_max_age: max,
-      },
-      `Main draw age range išsaugotas: ${min}–${max}.`
     );
   };
 
@@ -307,12 +262,14 @@ export default function AdminPage() {
       "Kodas",
       "Vardas",
       "Telefonas",
-      "Age",
-      "GDPR",
+      "Bracelet",
+      "Eligible",
+      "Selected Main",
       "Main Winner",
       "Main Won At",
       "Extra Winner",
       "Extra Won At",
+      "GDPR",
     ];
 
     const rows = participants.map((p) => [
@@ -320,8 +277,9 @@ export default function AdminPage() {
       p.code,
       p.name,
       p.phone,
-      p.age ?? "",
-      p.consent ? "Taip" : "Ne",
+      p.bracelet_color ?? "",
+      p.eligible_for_draw ? "Taip" : "Ne",
+      p.selected_for_main_prize ? "Taip" : "Ne",
       p.won_main_prize ? "Taip" : "Ne",
       p.main_prize_won_at
         ? new Date(p.main_prize_won_at).toLocaleString("lt-LT")
@@ -330,6 +288,7 @@ export default function AdminPage() {
       p.extra_prize_won_at
         ? new Date(p.extra_prize_won_at).toLocaleString("lt-LT")
         : "",
+      p.consent ? "Taip" : "Ne",
     ]);
 
     const csvContent = [headers, ...rows]
@@ -367,6 +326,22 @@ export default function AdminPage() {
 
   const extraWinnersCount = participants.filter(
     (p) => p.won_extra_prize || p.extra_prize_won_at
+  ).length;
+
+  const selectedMainWinner = participants.find(
+    (p) => p.selected_for_main_prize
+  );
+
+  const greenCount = participants.filter(
+    (p) => (p.bracelet_color ?? "green") === "green"
+  ).length;
+
+  const blueCount = participants.filter(
+    (p) => p.bracelet_color === "blue"
+  ).length;
+
+  const eligibleCount = participants.filter(
+    (p) => p.eligible_for_draw
   ).length;
 
   if (!isAuthorized) {
@@ -460,12 +435,14 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <div className="mb-6 grid gap-4 md:grid-cols-6">
+          <div className="mb-6 grid gap-4 md:grid-cols-4 xl:grid-cols-8">
             {[
-              ["Total participants", participants.length],
+              ["Total", participants.length],
+              ["Green", greenCount],
+              ["Blue", blueCount],
+              ["Eligible", eligibleCount],
               ["Main winners", mainWinnersCount],
               ["Extra winners", extraWinnersCount],
-              ["18+ mode", settings?.enforce_registration_18_plus ? "ON" : "OFF"],
               [
                 "Multi prize",
                 settings?.allow_same_person_win_multiple_prizes ? "ON" : "OFF",
@@ -494,16 +471,28 @@ export default function AdminPage() {
             <div className="mt-6 grid gap-4 xl:grid-cols-2">
               <div className="rounded-[1.75rem] border border-white/8 bg-white/[0.02] p-5">
                 <p className="text-sm font-bold uppercase tracking-[0.18em] text-white">
-                  Registration 18+ mode
+                  Selected main winner
+                </p>
+
+                <p className="mt-4 text-lg font-extrabold text-[#ff9bcd]">
+                  {selectedMainWinner
+                    ? `${selectedMainWinner.code} — ${selectedMainWinner.name}`
+                    : "Not selected"}
                 </p>
 
                 <button
                   type="button"
-                  onClick={() => void handleToggle18Plus()}
-                  disabled={busy || !settings}
+                  onClick={() =>
+                    void runAction(
+                      { action: "clear_main_winner" },
+                      "Clear selected main winner?",
+                      "Selected main winner cleared."
+                    )
+                  }
+                  disabled={busy || !selectedMainWinner}
                   className="mt-4 rounded-full border border-[#ff77bb]/30 bg-[#ff2f92]/10 px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] text-[#ff9bcd] disabled:opacity-40"
                 >
-                  {settings?.enforce_registration_18_plus ? "TURN OFF" : "TURN ON"}
+                  CLEAR SELECTED
                 </button>
               </div>
 
@@ -522,39 +511,6 @@ export default function AdminPage() {
                     ? "TURN OFF"
                     : "TURN ON"}
                 </button>
-              </div>
-
-              <div className="rounded-[1.75rem] border border-white/8 bg-white/[0.02] p-5">
-                <p className="text-sm font-bold uppercase tracking-[0.18em] text-white">
-                  Main draw age range
-                </p>
-
-                <div className="mt-5 grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-                  <input
-                    type="number"
-                    min="0"
-                    value={minAgeInput}
-                    onChange={(e) => setMinAgeInput(e.target.value)}
-                    className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none"
-                    placeholder="Min age"
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    value={maxAgeInput}
-                    onChange={(e) => setMaxAgeInput(e.target.value)}
-                    className="rounded-[1.25rem] border border-white/10 bg-white/[0.03] px-4 py-4 text-white outline-none"
-                    placeholder="Max age"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveAgeRange()}
-                    disabled={busy || !settings}
-                    className="rounded-full border border-[#ff77bb]/40 bg-[linear-gradient(135deg,#ff2f92,#ff66b7)] px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] text-white disabled:opacity-40"
-                  >
-                    SAVE
-                  </button>
-                </div>
               </div>
 
               <div className="rounded-[1.75rem] border border-white/8 bg-white/[0.02] p-5">
@@ -582,7 +538,7 @@ export default function AdminPage() {
                 </div>
               </div>
 
-              <div className="rounded-[1.75rem] border border-white/8 bg-white/[0.02] p-5 xl:col-span-2">
+              <div className="rounded-[1.75rem] border border-white/8 bg-white/[0.02] p-5">
                 <p className="text-sm font-bold uppercase tracking-[0.18em] text-white">
                   Draw resets
                 </p>
@@ -593,8 +549,8 @@ export default function AdminPage() {
                     onClick={() =>
                       void runAction(
                         { action: "reset_main" },
-                        "Reset MAIN draw?",
-                        "MAIN draw atstatytas."
+                        "Reset MAIN draw result?",
+                        "MAIN draw reset."
                       )
                     }
                     disabled={busy}
@@ -608,8 +564,8 @@ export default function AdminPage() {
                     onClick={() =>
                       void runAction(
                         { action: "reset_extra" },
-                        "Reset EXTRA draw?",
-                        "EXTRA draw atstatytas."
+                        "Reset EXTRA draw results?",
+                        "EXTRA draw reset."
                       )
                     }
                     disabled={busy}
@@ -623,8 +579,8 @@ export default function AdminPage() {
                     onClick={() =>
                       void runAction(
                         { action: "reset_all" },
-                        "Reset ALL draw results?",
-                        "Visi rezultatai atstatyti."
+                        "Reset ALL draw results and selected main winner?",
+                        "All draw results reset."
                       )
                     }
                     disabled={busy}
@@ -667,9 +623,10 @@ export default function AdminPage() {
                         "Data",
                         "Kodas",
                         "Vardas",
-                        "Age",
                         "Telefonas",
-                        "GDPR",
+                        "Bracelet",
+                        "Eligible",
+                        "Selected",
                         "Main",
                         "Extra",
                         "Actions",
@@ -692,12 +649,19 @@ export default function AdminPage() {
                       const isExtraWinner =
                         participant.won_extra_prize ||
                         participant.extra_prize_won_at;
+                      const braceletColor =
+                        participant.bracelet_color ?? "green";
+                      const isEligible = Boolean(
+                        participant.eligible_for_draw
+                      );
 
                       return (
                         <tr
                           key={participant.id}
                           className={
-                            isMainWinner || isExtraWinner
+                            participant.selected_for_main_prize
+                              ? "bg-yellow-500/10"
+                              : isMainWinner || isExtraWinner
                               ? "bg-[#ff2f92]/10"
                               : "bg-white/[0.03]"
                           }
@@ -712,39 +676,107 @@ export default function AdminPage() {
                             {participant.name}
                           </td>
                           <td className="border-y border-white/8 px-4 py-4 text-sm text-white/80">
-                            {participant.age ?? ""}
-                          </td>
-                          <td className="border-y border-white/8 px-4 py-4 text-sm text-white/80">
                             {participant.phone}
                           </td>
-                          <td className="border-y border-white/8 px-4 py-4 text-sm text-white/80">
-                            {participant.consent ? "Taip" : "Ne"}
+                          <td className="border-y border-white/8 px-4 py-4 text-sm font-bold">
+                            <span
+                              className={
+                                braceletColor === "blue"
+                                  ? "text-blue-300"
+                                  : "text-green-300"
+                              }
+                            >
+                              {braceletColor.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="border-y border-white/8 px-4 py-4 text-sm font-bold">
+                            {isEligible ? (
+                              <span className="text-green-300">YES</span>
+                            ) : (
+                              <span className="text-blue-300">NO</span>
+                            )}
+                          </td>
+                          <td className="border-y border-white/8 px-4 py-4 text-sm font-bold">
+                            {participant.selected_for_main_prize ? (
+                              <span className="text-yellow-300">YES</span>
+                            ) : (
+                              <span className="text-white/40">NO</span>
+                            )}
                           </td>
                           <td className="border-y border-white/8 px-4 py-4 text-sm font-bold text-white">
-                            {isMainWinner ? "Taip" : "Ne"}
+                            {isMainWinner ? "YES" : "NO"}
                           </td>
                           <td className="border-y border-white/8 px-4 py-4 text-sm font-bold text-white">
-                            {isExtraWinner ? "Taip" : "Ne"}
+                            {isExtraWinner ? "YES" : "NO"}
                           </td>
                           <td className="rounded-r-[1.5rem] border-y border-r border-white/8 px-4 py-4 text-sm text-white/80">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                void runAction(
-                                  {
-                                    action: "delete_participant",
-                                    participantId: participant.id,
-                                    code: participant.code,
-                                  },
-                                  `Delete ${participant.name}?`,
-                                  `Dalyvis "${participant.name}" ištrintas.`
-                                )
-                              }
-                              disabled={busy}
-                              className="rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-200 disabled:opacity-40"
-                            >
-                              DELETE
-                            </button>
+                            <div className="flex min-w-[420px] flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void runAction(
+                                    {
+                                      action: "set_main_winner",
+                                      participantId: participant.id,
+                                    },
+                                    `Set ${participant.name} as selected MAIN winner?`,
+                                    `Selected MAIN winner: ${participant.code}.`
+                                  )
+                                }
+                                disabled={busy}
+                                className="rounded-full border border-yellow-400/30 bg-yellow-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-yellow-200 disabled:opacity-40"
+                              >
+                                SET MAIN
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void runAction(
+                                    {
+                                      action: "set_bracelet",
+                                      participantId: participant.id,
+                                      code: participant.code,
+                                      braceletColor:
+                                        braceletColor === "blue"
+                                          ? "green"
+                                          : "blue",
+                                    },
+                                    `Change ${participant.name} to ${
+                                      braceletColor === "blue"
+                                        ? "GREEN / eligible"
+                                        : "BLUE / not eligible"
+                                    }?`,
+                                    `Bracelet updated for ${participant.code}.`
+                                  )
+                                }
+                                disabled={busy}
+                                className="rounded-full border border-blue-400/30 bg-blue-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-blue-200 disabled:opacity-40"
+                              >
+                                {braceletColor === "blue"
+                                  ? "MAKE GREEN"
+                                  : "MAKE BLUE"}
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void runAction(
+                                    {
+                                      action: "delete_participant",
+                                      participantId: participant.id,
+                                      code: participant.code,
+                                    },
+                                    `Delete ${participant.name}?`,
+                                    `Dalyvis "${participant.name}" ištrintas.`
+                                  )
+                                }
+                                disabled={busy}
+                                className="rounded-full border border-red-400/30 bg-red-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-200 disabled:opacity-40"
+                              >
+                                DELETE
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
