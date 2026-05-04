@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 
-type DrawState = "idle" | "loading" | "spinning" | "revealed";
+type DrawState = "idle" | "spinning" | "revealed";
 
 const DESIGN_WIDTH = 1728;
 const DESIGN_HEIGHT = 972;
@@ -34,7 +34,6 @@ const STOP_SEQUENCE = [
 export default function DrawExtraPage() {
   const [drawState, setDrawState] = useState<DrawState>("idle");
   const [digits, setDigits] = useState(["0", "0", "0", "0"]);
-  const [errorMessage, setErrorMessage] = useState("");
 
   const intervalsRef = useRef<number[]>([]);
   const timeoutsRef = useRef<number[]>([]);
@@ -68,6 +67,16 @@ export default function DrawExtraPage() {
     return localIntervals;
   };
 
+  const launchConfetti = () => {
+    confetti({
+      particleCount: 180,
+      spread: 90,
+      startVelocity: 45,
+      origin: { x: 0.5, y: 0.55 },
+      colors: ["#49f2aa", "#41b7ff", "#ff4fc3", "#ffffff"],
+    });
+  };
+
   const stopDigitsToCode = (winnerCode: string, localIntervals: number[]) => {
     const finalDigits = winnerCode.padStart(4, "0").slice(0, 4).split("");
 
@@ -96,37 +105,18 @@ export default function DrawExtraPage() {
     });
   };
 
-  const launchConfetti = () => {
-    confetti({
-      particleCount: 180,
-      spread: 90,
-      startVelocity: 45,
-      origin: { x: 0.5, y: 0.55 },
-      colors: ["#49f2aa", "#41b7ff", "#ff4fc3", "#ffffff"],
-    });
-
-    const end = Date.now() + 2200;
-
-    const frame = () => {
-      confetti({
-        particleCount: 5,
-        spread: 70,
-        startVelocity: 35,
-        origin: { x: Math.random(), y: Math.random() * 0.55 },
-        colors: ["#49f2aa", "#41b7ff", "#ff4fc3", "#ffffff"],
-      });
-
-      if (Date.now() < end) requestAnimationFrame(frame);
-    };
-
-    frame();
+  const silentlyReset = () => {
+    clearTimers();
+    setDigits(["0", "0", "0", "0"]);
+    setDrawState("idle");
+    isRunningRef.current = false;
   };
 
   const startDraw = async () => {
     if (isRunningRef.current) return;
 
     isRunningRef.current = true;
-    setErrorMessage("");
+
     setDigits(["0", "0", "0", "0"]);
     setDrawState("spinning");
 
@@ -141,11 +131,8 @@ export default function DrawExtraPage() {
       const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        clearTimers();
-        setErrorMessage(result?.message ?? "Failed to run extra draw.");
-        setDrawState("idle");
-        setDigits(["0", "0", "0", "0"]);
-        isRunningRef.current = false;
+        // ❗ НИЧЕГО НЕ ПОКАЗЫВАЕМ
+        silentlyReset();
         return;
       }
 
@@ -154,22 +141,14 @@ export default function DrawExtraPage() {
         .slice(0, 4);
 
       if (winnerCode.length !== 4) {
-        clearTimers();
-        setErrorMessage("Winner code was not returned.");
-        setDrawState("idle");
-        setDigits(["0", "0", "0", "0"]);
-        isRunningRef.current = false;
+        silentlyReset();
         return;
       }
 
       stopDigitsToCode(winnerCode, localIntervals);
     } catch (error) {
       console.error(error);
-      clearTimers();
-      setErrorMessage("Failed to run extra draw.");
-      setDrawState("idle");
-      setDigits(["0", "0", "0", "0"]);
-      isRunningRef.current = false;
+      silentlyReset();
     }
   };
 
@@ -213,7 +192,6 @@ export default function DrawExtraPage() {
             <svg
               viewBox="0 0 100 100"
               className="h-full w-full overflow-visible"
-              aria-hidden="true"
             >
               <text
                 x="50"
@@ -234,12 +212,6 @@ export default function DrawExtraPage() {
             </svg>
           </div>
         ))}
-
-        {errorMessage && (
-          <div className="pointer-events-none absolute bottom-8 left-1/2 z-30 max-w-[80%] -translate-x-1/2 rounded-3xl bg-red-500/85 px-8 py-5 text-center text-2xl font-bold text-white shadow-[0_12px_30px_rgba(0,0,0,0.25)]">
-            {errorMessage}
-          </div>
-        )}
       </div>
     </main>
   );
