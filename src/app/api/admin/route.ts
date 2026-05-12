@@ -11,7 +11,8 @@ type AdminAction =
   | "delete_all_participants"
   | "set_main_winner"
   | "clear_main_winner"
-  | "set_bracelet";
+  | "set_bracelet"
+  | "toggle_site_lock";
 
 function isAuthorized(request: Request) {
   const adminPassword = process.env.ADMIN_PASSWORD;
@@ -55,6 +56,7 @@ async function loadAdminData() {
       .select(
         `
           id,
+          site_locked,
           main_draw_min_age,
           main_draw_max_age,
           enforce_registration_18_plus,
@@ -113,6 +115,10 @@ export async function PATCH(request: Request) {
       updatePayload.extra_prizes_total = Number(body.extra_prizes_total);
     }
 
+    if ("site_locked" in body) {
+      updatePayload.site_locked = Boolean(body.site_locked);
+    }
+
     const { error } = await supabaseAdmin
       .from("app_settings")
       .update(updatePayload)
@@ -145,6 +151,23 @@ export async function POST(request: Request) {
       code?: string;
       braceletColor?: "green" | "blue";
     };
+
+    if (body.action === "toggle_site_lock") {
+      const { data: settings, error: loadError } = await supabaseAdmin
+        .from("app_settings")
+        .select("site_locked")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (loadError) throw loadError;
+
+      const { error } = await supabaseAdmin
+        .from("app_settings")
+        .update({ site_locked: !settings?.site_locked })
+        .eq("id", 1);
+
+      if (error) throw error;
+    }
 
     if (body.action === "reset_main") {
       const { error } = await supabaseAdmin

@@ -29,6 +29,7 @@ type Participant = {
 
 type AppSettings = {
   id: number;
+  site_locked?: boolean | null;
   main_draw_min_age?: number | null;
   main_draw_max_age?: number | null;
   enforce_registration_18_plus?: boolean | null;
@@ -361,7 +362,7 @@ export default function AdminPage() {
           </p>
 
           <h1 className="mt-5 text-center text-4xl font-extrabold tracking-[-0.04em] text-white">
-            PLOOM ADMIN
+            ADMIN
           </h1>
 
           <div className="mt-8">
@@ -409,8 +410,16 @@ export default function AdminPage() {
                 Admin Panel
               </p>
               <h1 className="mt-3 text-4xl font-extrabold tracking-[-0.04em] text-white">
-                PLOOM LOTTERY
+                LOTTERY
               </h1>
+
+              <p
+                className={`mt-3 text-sm font-extrabold uppercase tracking-[0.24em] ${
+                  settings?.site_locked ? "text-red-300" : "text-green-300"
+                }`}
+              >
+                {settings?.site_locked ? "SITE LOCKED" : "SITE OPEN"}
+              </p>
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -428,6 +437,27 @@ export default function AdminPage() {
                 className="rounded-full border border-white/14 bg-white/[0.04] px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] text-white/85"
               >
                 REFRESH
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void runAction(
+                    { action: "toggle_site_lock" },
+                    settings?.site_locked
+                      ? "UNLOCK SITE?"
+                      : "LOCK SITE? Registration and draw screens will become black.",
+                    settings?.site_locked ? "Site unlocked." : "Site locked."
+                  )
+                }
+                disabled={busy || !settings}
+                className={`rounded-full border px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] disabled:opacity-40 ${
+                  settings?.site_locked
+                    ? "border-green-400/30 bg-green-500/10 text-green-200"
+                    : "border-red-400/30 bg-red-500/10 text-red-200"
+                }`}
+              >
+                {settings?.site_locked ? "UNLOCK SITE" : "LOCK SITE"}
               </button>
 
               <button
@@ -464,8 +494,8 @@ export default function AdminPage() {
               ["Main winners", mainWinnersCount],
               ["Extra winners", extraWinnersCount],
               [
-                "Multi prize",
-                settings?.allow_same_person_win_multiple_prizes ? "ON" : "OFF",
+                "Site",
+                settings?.site_locked ? "LOCKED" : "OPEN",
               ],
               ["Extra prizes", settings?.extra_prizes_total ?? 0],
             ].map(([label, value]) => (
