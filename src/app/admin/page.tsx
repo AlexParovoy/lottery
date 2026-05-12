@@ -7,6 +7,7 @@ type Participant = {
   code: string;
   name: string;
   phone: string;
+  email?: string | null;
   age?: number | null;
   consent: boolean;
   created_at: string;
@@ -242,7 +243,9 @@ export default function AdminPage() {
     const total = Number(extraPrizesInput);
 
     if (!Number.isInteger(total) || total < 0) {
-      setActionMessage("Extra prizes total turi būti sveikas neneigiamas skaičius.");
+      setActionMessage(
+        "Extra prizes total turi būti sveikas neneigiamas skaičius."
+      );
       return;
     }
 
@@ -262,6 +265,7 @@ export default function AdminPage() {
       "Kodas",
       "Vardas",
       "Telefonas",
+      "Email",
       "Bracelet",
       "Eligible",
       "Selected Main",
@@ -277,6 +281,7 @@ export default function AdminPage() {
       p.code,
       p.name,
       p.phone,
+      p.email ?? "",
       p.bracelet_color ?? "",
       p.eligible_for_draw ? "Taip" : "Ne",
       p.selected_for_main_prize ? "Taip" : "Ne",
@@ -423,6 +428,21 @@ export default function AdminPage() {
                 className="rounded-full border border-white/14 bg-white/[0.04] px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] text-white/85"
               >
                 REFRESH
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void runAction(
+                    { action: "delete_all_participants" },
+                    "DELETE ALL PARTICIPANTS? This will also reset all bracelet codes to unused.",
+                    "All participants deleted and all bracelet codes reset."
+                  )
+                }
+                disabled={busy}
+                className="rounded-full border border-red-400/30 bg-red-500/10 px-6 py-4 text-sm font-extrabold uppercase tracking-[0.24em] text-red-200 disabled:opacity-40"
+              >
+                DELETE ALL
               </button>
 
               <button
@@ -624,6 +644,7 @@ export default function AdminPage() {
                         "Kodas",
                         "Vardas",
                         "Telefonas",
+                        "Email",
                         "Bracelet",
                         "Eligible",
                         "Selected",
@@ -677,6 +698,9 @@ export default function AdminPage() {
                           </td>
                           <td className="border-y border-white/8 px-4 py-4 text-sm text-white/80">
                             {participant.phone}
+                          </td>
+                          <td className="border-y border-white/8 px-4 py-4 text-sm text-white/80">
+                            {participant.email ?? ""}
                           </td>
                           <td className="border-y border-white/8 px-4 py-4 text-sm font-bold">
                             <span

@@ -8,6 +8,7 @@ type AdminAction =
   | "reset_extra"
   | "reset_all"
   | "delete_participant"
+  | "delete_all_participants"
   | "set_main_winner"
   | "clear_main_winner"
   | "set_bracelet";
@@ -30,6 +31,7 @@ async function loadAdminData() {
           code,
           name,
           phone,
+          email,
           age,
           consent,
           created_at,
@@ -248,6 +250,26 @@ export async function POST(request: Request) {
         .eq("code", body.code);
 
       if (codeError) throw codeError;
+    }
+
+    if (body.action === "delete_all_participants") {
+      const { error: deleteError } = await supabaseAdmin
+        .from("participants")
+        .delete()
+        .neq("id", 0);
+
+      if (deleteError) throw deleteError;
+
+      const { error: codesResetError } = await supabaseAdmin
+        .from("codes")
+        .update({
+          used: false,
+          used_at: null,
+          used_by_phone: null,
+        })
+        .neq("id", 0);
+
+      if (codesResetError) throw codesResetError;
     }
 
     if (body.action === "delete_participant") {
